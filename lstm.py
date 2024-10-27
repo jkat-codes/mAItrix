@@ -107,7 +107,9 @@ model.fit(X_train, Y_train, epochs=100, batch_size=32)
 
 # Make predictions
 predicted_price_changes = model.predict(X_test)
-predicted_price_changes = scaler.inverse_transform(predicted_price_changes)
+predicted_price_changes = scaler.inverse_transform(
+    predicted_price_changes.reshape(-1, 1)
+)
 
 plt.figure(figsize=(12, 6))
 plt.plot(data["Price Change"], label="Actual Price Changes", color="blue")
