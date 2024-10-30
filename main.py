@@ -314,10 +314,15 @@ def predict(X, parameters, activation):
     return scaler.inverse_transform(AL.T).flatten()
 
 
-def find_best_params(learning_rates, dropout_rates):
+def find_best_params(learning_rates, dropout_rates, iterations):
     layers = [int(num_features), 32, 1]
 
-    for rate, drate in itertools.product(learning_rates, dropout_rates):
+    for rate, drate, its in itertools.product(
+        learning_rates, dropout_rates, iterations
+    ):
+        print(
+            f"Training with learning rate:{rate}, dropout rate{drate}, iterations{its}"
+        )
         hyperparameters = {
             "learning_rate": rate,
             "activation": "leaky_relu",
@@ -330,7 +335,7 @@ def find_best_params(learning_rates, dropout_rates):
             Y_train,
             layers,
             learning_rate=rate,
-            num_iterations=5000,
+            num_iterations=its,
             dropout_rate=drate,
             training=True,
             activation="leaky_relu",
@@ -377,4 +382,5 @@ def train_base():
 if __name__ == "__main__":
     learning_rates = [0.00001, 0.0001, 0.001]
     dropout_rate = [0.6, 0.5, 0.4, 0.3]
-    find_best_params(learning_rates, dropout_rate)
+    iterations = [5000, 20000, 50000, 100000]
+    find_best_params(learning_rates, dropout_rate, iterations)
