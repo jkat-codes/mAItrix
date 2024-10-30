@@ -321,7 +321,7 @@ def find_best_params(learning_rates, dropout_rates, iterations):
         learning_rates, dropout_rates, iterations
     ):
         print(
-            f"Training with learning rate:{rate}, dropout rate{drate}, iterations{its}"
+            f"\nTraining with learning rate: {rate}, dropout rate: {drate}, iterations: {its}"
         )
         hyperparameters = {
             "learning_rate": rate,
