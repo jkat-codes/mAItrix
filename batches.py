@@ -15,8 +15,8 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.metrics import mean_absolute_error
 from datetime import datetime
 
-# data = yf.download("QQQ", period='1mo', interval='15m')
-# data.to_pickle('stock_data.pkl')
+# data = yf.download("QQQ", period="1mo", interval="15m")
+# data.to_pickle("stock_data.pkl")
 data = pd.read_pickle("stock_data.pkl")
 
 
@@ -79,7 +79,7 @@ def create_dataset(data, time_step=1):
     return np.array(X), np.array(Y)
 
 
-time_step = 10  # number of previous 15 min periods for prediction
+time_step = 15  # number of previous 15 min periods for prediction
 X_full, Y_full = create_dataset(features, time_step)
 
 
@@ -313,7 +313,7 @@ def model(
 
     best_cost = float("inf")
     best_parameters = None
-    patience = 20
+    patience = 2
 
     # Mini-batch training
     for i in tqdm.tqdm(range(num_iterations)):
@@ -359,7 +359,7 @@ def model(
             best_cost = cost
             best_parameters = parameters.copy()
 
-        if early_stopping_check(costs, patience=num_iterations // 2):
+        if early_stopping_check(costs):
             print("Early stopping triggered.")
             break
 
@@ -372,47 +372,327 @@ def model(
     return best_parameters
 
 
-# Example usage with enhanced hyperparameters:
-if __name__ == "__main__":
-    learning_rate = 0.001  # Lower initial learning rate
-    num_iterations = 50000  # More iterations
-    dropout_rate = 0.3
-    activation = "leaky_relu"
-    batch_size = 128
+def predict_market_price(
+    input_data, model_parameters, scaler_X, scaler_y, activation="leaky_relu"
+):
+    """
+    Predict market price using the trained neural network
 
-    input_nums = 10 * 8
+    Parameters:
+    - input_data: Numpy array of recent market data (same format as training data)
+    - model_parameters: Trained neural network parameters
+    - scaler_X: Input feature scaler
+    - scaler_y: Target price change scaler
+    - activation: Activation function used during training
 
-    # Deeper network with more neurons
-    layers = [
-        int(input_nums),  # Input layer
-        256,  # First hidden layer
-        128,  # Second hidden layer
-        64,  # Third hidden layer
-        32,  # Fourth hidden layer
-        1,  # Output layer
-    ]
-
-    hyperparameters = {
-        "learning_rate": learning_rate,
-        "activation": activation,
-        "num_iterations": num_iterations,
-        "dropout_rate": dropout_rate,
-        "batch_size": batch_size,
-    }
-
-    parameters = model(
-        X_train,
-        Y_train,
-        layers,
-        learning_rate=learning_rate,
-        num_iterations=num_iterations,
-        dropout_rate=dropout_rate,
-        batch_size=batch_size,
-        training=True,
-        activation=activation,
+    Returns:
+    - Current price
+    - Predicted price change
+    - Predicted price
+    """
+    # Prepare input data (reshape and scale)
+    input_data_flattened = input_data.reshape(1, -1)
+    input_data_scaled = scaler_X.transform(input_data_flattened)
+    input_data_reshaped = input_data_scaled.reshape(
+        1, input_data.shape[0], input_data.shape[1]
     )
 
-    predicted_changes = predict(X_test, parameters, activation=activation)
-    actual_changes = scaler.inverse_transform(Y_test.reshape(-1, 1)).flatten()
+    # Predict price change
+    predicted_change_scaled, _ = forward_prop(
+        input_data_reshaped,
+        model_parameters,
+        activation,
+        dropout_rate=0.0,
+        training=False,
+    )
 
-    plot_predictions(actual_changes, predicted_changes, hyperparameters)
+    # Inverse transform the predicted change
+    predicted_change = scaler_y.inverse_transform(predicted_change_scaled.T).flatten()[
+        0
+    ]
+
+    # Get current price (last price in the input data)
+    current_price = input_data[-1, 0]  # Assuming first column is price
+
+    # Calculate predicted price
+    predicted_price = current_price + predicted_change
+
+    return current_price, predicted_change, predicted_price
+
+
+import itertools
+from datetime import datetime
+import os
+import json
+import numpy as np
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import matplotlib.pyplot as plt
+
+
+def create_parameter_grid():
+    """Define hyperparameter search space"""
+    param_grid = {
+        "learning_rate": [0.0001, 0.001, 0.01],
+        "dropout_rate": [0.2, 0.5, 0.7],
+        "activation": ["leaky_relu", "relu", "tanh"],
+        "num_iterations": [1000, 2000],
+        "batch_size": [32, 64],
+        "layer_dims": [
+            [15 * 8, 32, 1],
+            [15 * 8, 64, 32, 1],
+            [15 * 8, 128, 64, 32, 1],
+        ],
+    }
+    return param_grid
+
+
+def evaluate_model(actual, predicted):
+    """Calculate various performance metrics"""
+    metrics = {
+        "mae": mean_absolute_error(actual, predicted),
+        "mse": mean_squared_error(actual, predicted),
+        "rmse": np.sqrt(mean_squared_error(actual, predicted)),
+        "r2": r2_score(actual, predicted),
+        # Directional accuracy (how often the model predicts the correct direction)
+        "directional_accuracy": np.mean(np.sign(predicted) == np.sign(actual)),
+    }
+    return metrics
+
+
+def save_model_results(params, metrics, predictions, actuals, run_id):
+    """Save model results and plots"""
+    # Create directory for this run
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = f"model_runs/{timestamp}_{run_id}"
+    os.makedirs(run_dir, exist_ok=True)
+
+    # Save parameters and metrics
+    results = {"parameters": params, "metrics": metrics}
+    with open(f"{run_dir}/results.json", "w") as f:
+        json.dump(results, f, indent=4)
+
+    # Save predictions
+    np.save(f"{run_dir}/predictions.npy", predictions)
+    np.save(f"{run_dir}/actuals.npy", actuals)
+
+    # Generate and save plots
+    plt.figure(figsize=(12, 6))
+    plt.plot(actuals, label="Actual", color="blue", alpha=0.7)
+    plt.plot(predictions, label="Predicted", color="red", alpha=0.7)
+    plt.title(f"Model Predictions (Run {run_id})")
+    plt.xlabel("Time")
+    plt.ylabel("Price Difference")
+    plt.legend()
+
+    # Add metrics and parameters to plot
+    info_text = f"MAE: {metrics['mae']:.4f}\n"
+    info_text += f"RMSE: {metrics['rmse']:.4f}\n"
+    info_text += f"R²: {metrics['r2']:.4f}\n"
+    info_text += f"Dir. Acc: {metrics['directional_accuracy']:.2%}\n"
+    info_text += f"LR: {params['learning_rate']}\n"
+    info_text += f"DR: {params['dropout_rate']}"
+
+    plt.figtext(
+        0.02,
+        0.98,
+        info_text,
+        verticalalignment="top",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    )
+
+    plt.tight_layout()
+    plt.savefig(f"{run_dir}/predictions_plot.png")
+    plt.close()
+
+    return run_dir
+
+
+def run_hyperparameter_search(X_train, Y_train, X_test, Y_test):
+    """Run automated hyperparameter search"""
+    param_grid = create_parameter_grid()
+
+    # Generate all combinations of parameters
+    param_combinations = [
+        dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())
+    ]
+
+    best_metrics = {"rmse": float("inf")}
+    best_params = None
+    all_results = []
+
+    for i, params in enumerate(param_combinations):
+        print(f"\nTesting combination {i+1}/{len(param_combinations)}")
+        print(f"Parameters: {params}")
+
+        # Train model
+        parameters = model(
+            X_train,
+            Y_train,
+            params["layer_dims"],
+            learning_rate=params["learning_rate"],
+            num_iterations=params["num_iterations"],
+            dropout_rate=params["dropout_rate"],
+            batch_size=params["batch_size"],
+            activation=params["activation"],
+        )
+
+        # Generate predictions
+        predicted_changes = predict(X_test, parameters, params["activation"])
+        actual_changes = scaler.inverse_transform(Y_test.reshape(-1, 1)).flatten()
+
+        # Evaluate model
+        metrics = evaluate_model(actual_changes, predicted_changes)
+
+        # Save results
+        run_dir = save_model_results(
+            params, metrics, predicted_changes, actual_changes, f"run_{i+1}"
+        )
+
+        # Track best model
+        if metrics["rmse"] < best_metrics["rmse"]:
+            best_metrics = metrics
+            best_params = params
+            # Save best model parameters
+            with open(f"{run_dir}/model_parameters.pkl", "wb") as f:
+                pickle.dump(parameters, f)
+
+        result = {"params": params, "metrics": metrics, "run_dir": run_dir}
+        all_results.append(result)
+
+        print(f"RMSE: {metrics['rmse']:.4f}")
+        print(f"Directional Accuracy: {metrics['directional_accuracy']:.2%}")
+
+    # Generate summary report
+    generate_summary_report(all_results, best_params, best_metrics)
+
+    return best_params, best_metrics, all_results
+
+
+def generate_summary_report(all_results, best_params, best_metrics):
+    """Generate a summary report of all runs"""
+    report_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = f"model_runs/summary_report_{report_time}.html"
+
+    html_content = """
+    <html>
+    <head>
+        <style>
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid black; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            .best-row { background-color: #90EE90; }
+        </style>
+    </head>
+    <body>
+        <h1>Hyperparameter Search Results</h1>
+        <h2>Best Model Configuration:</h2>
+        <pre>
+    """
+
+    html_content += f"Parameters: {json.dumps(best_params, indent=4)}\n"
+    html_content += f"Metrics: {json.dumps(best_metrics, indent=4)}\n"
+    html_content += """
+        </pre>
+        <h2>All Results:</h2>
+        <table>
+            <tr>
+                <th>Run</th>
+                <th>Learning Rate</th>
+                <th>Dropout Rate</th>
+                <th>Activation</th>
+                <th>Iterations</th>
+                <th>Batch Size</th>
+                <th>RMSE</th>
+                <th>Dir. Accuracy</th>
+                <th>Plot Link</th>
+            </tr>
+    """
+
+    for i, result in enumerate(all_results):
+        is_best = result["params"] == best_params
+        row_class = "best-row" if is_best else ""
+        html_content += f"""
+            <tr class="{row_class}">
+                <td>{i+1}</td>
+                <td>{result['params']['learning_rate']}</td>
+                <td>{result['params']['dropout_rate']}</td>
+                <td>{result['params']['activation']}</td>
+                <td>{result['params']['num_iterations']}</td>
+                <td>{result['params']['batch_size']}</td>
+                <td>{result['metrics']['rmse']:.4f}</td>
+                <td>{result['metrics']['directional_accuracy']:.2%}</td>
+                <td><a href="../{result['run_dir']}/predictions_plot.png">View Plot</a></td>
+            </tr>
+        """
+
+    html_content += """
+        </table>
+    </body>
+    </html>
+    """
+
+    with open(report_path, "w") as f:
+        f.write(html_content)
+
+    print(f"\nSummary report generated: {report_path}")
+
+
+# Usage example
+if __name__ == "__main__":
+    # Create directory for model runs if it doesn't exist
+    os.makedirs("model_runs", exist_ok=True)
+
+    best_params, best_metrics, all_results = run_hyperparameter_search(
+        X_train, Y_train, X_test, Y_test
+    )
+
+    print("\nBest parameters found:")
+    print(json.dumps(best_params, indent=4))
+    print("\nBest metrics achieved:")
+    print(json.dumps(best_metrics, indent=4))
+
+# Example usage with enhanced hyperparameters:
+# if __name__ == "__main__":
+#     learning_rate = 0.001  # Lower initial learning rate
+#     num_iterations = 2000  # More iterations
+#     dropout_rate = 0.7
+#     activation = "leaky_relu"
+#     batch_size = 32
+
+#     input_nums = 15 * 8
+
+#     # Deeper network with more neurons
+#     layers = [
+#         int(input_nums),
+#         32,  # Fourth hidden layer
+#         1,  # Output layer
+#     ]
+
+#     hyperparameters = {
+#         "learning_rate": learning_rate,
+#         "activation": activation,
+#         "num_iterations": num_iterations,
+#         "dropout_rate": dropout_rate,
+#         "batch_size": batch_size,
+#     }
+
+#     parameters = model(
+#         X_train,
+#         Y_train,
+#         layers,
+#         learning_rate=learning_rate,
+#         num_iterations=num_iterations,
+#         dropout_rate=dropout_rate,
+#         batch_size=batch_size,
+#         training=True,
+#         activation=activation,
+#     )
+
+#     predicted_train = predict(X_train, parameters, activation)
+#     actual_train = scaler.inverse_transform(Y_train.reshape(-1, 1)).flatten()
+
+#     predicted_changes = predict(X_test, parameters, activation=activation)
+#     actual_changes = scaler.inverse_transform(Y_test.reshape(-1, 1)).flatten()
+
+#     plot_predictions(actual_changes, predicted_changes, hyperparameters)
+#     plot_predictions(actual_train, predicted_train, hyperparameters)
