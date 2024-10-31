@@ -359,7 +359,7 @@ def model(
             best_cost = cost
             best_parameters = parameters.copy()
 
-        if early_stopping_check(costs):
+        if early_stopping_check(costs, patience=num_iterations // 2):
             print("Early stopping triggered.")
             break
 
