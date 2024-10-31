@@ -375,10 +375,10 @@ def model(
 # Example usage with enhanced hyperparameters:
 if __name__ == "__main__":
     learning_rate = 0.001  # Lower initial learning rate
-    num_iterations = 2000  # More iterations
+    num_iterations = 50000  # More iterations
     dropout_rate = 0.3
     activation = "leaky_relu"
-    batch_size = 32
+    batch_size = 128
 
     input_nums = 10 * 8
 
