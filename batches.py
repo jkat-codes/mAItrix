@@ -1,3 +1,4 @@
+import cupy as cp
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
@@ -15,8 +16,10 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.metrics import mean_absolute_error
 from datetime import datetime
 
-# data = yf.download("QQQ", period="1mo", interval="15m")
-# data.to_pickle("stock_data.pkl")
+
+
+data = yf.download("QQQ", period="1mo", interval="15m")
+data.to_pickle("stock_data.pkl")
 data = pd.read_pickle("stock_data.pkl")
 
 
@@ -432,15 +435,15 @@ import matplotlib.pyplot as plt
 def create_parameter_grid():
     """Define hyperparameter search space"""
     param_grid = {
-        "learning_rate": [0.0001, 0.001, 0.01],
-        "dropout_rate": [0.2, 0.5, 0.7],
-        "activation": ["leaky_relu", "relu", "tanh"],
+        "learning_rate": [0.01],
+        "dropout_rate": [0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+        "activation": ["elu", "leaky_relu"],
         "num_iterations": [1000, 2000],
         "batch_size": [32, 64],
         "layer_dims": [
             [15 * 8, 32, 1],
-            [15 * 8, 64, 32, 1],
-            [15 * 8, 128, 64, 32, 1],
+            [15 * 8, 22, 1], 
+            [15 * 8, 12, 1]
         ],
     }
     return param_grid
@@ -463,7 +466,7 @@ def save_model_results(params, metrics, predictions, actuals, run_id):
     """Save model results and plots"""
     # Create directory for this run
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = f"model_runs/{timestamp}_{run_id}"
+    run_dir = f"model_runs_daily/{timestamp}_{run_id}"
     os.makedirs(run_dir, exist_ok=True)
 
     # Save parameters and metrics
@@ -571,7 +574,7 @@ def run_hyperparameter_search(X_train, Y_train, X_test, Y_test):
 def generate_summary_report(all_results, best_params, best_metrics):
     """Generate a summary report of all runs"""
     report_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_path = f"model_runs/summary_report_{report_time}.html"
+    report_path = f"model_runs_daily/summary_report_{report_time}.html"
 
     html_content = """
     <html>
@@ -640,7 +643,7 @@ def generate_summary_report(all_results, best_params, best_metrics):
 # Usage example
 if __name__ == "__main__":
     # Create directory for model runs if it doesn't exist
-    os.makedirs("model_runs", exist_ok=True)
+    os.makedirs("model_runs_daily", exist_ok=True)
 
     best_params, best_metrics, all_results = run_hyperparameter_search(
         X_train, Y_train, X_test, Y_test
